@@ -1,230 +1,230 @@
-/**
- * LLM Chat App Frontend
- *
- * Handles the chat UI interactions and communication with the backend API.
- */
 
-// DOM elements
 const chatMessages = document.getElementById("chat-messages");
 const userInput = document.getElementById("user-input");
 const sendButton = document.getElementById("send-button");
 const typingIndicator = document.getElementById("typing-indicator");
+const modelSelect = document.getElementById("model-select");
+const modelInfo = document.getElementById("model-info");
 
-// Chat state
-let chatHistory = [
-	{
-		role: "assistant",
-		content:
-			"Hello! I'm an LLM chat app powered by Cloudflare Workers AI. How can I help you today?",
-	},
-];
+const modelDescriptions = {
+  llama: "Modelo de uso geral para perguntas, explicações e tarefas cotidianas.",
+  glm: "Alternativa multilíngue com recursos de raciocínio e uso de ferramentas.",
+  gemma: "Modelo multimodal para tarefas mais complexas, sujeito aos recursos suportados pelo chat."
+};
+
+let chatHistory = [];
 let isProcessing = false;
 
-// Auto-resize textarea as user types
+modelSelect.addEventListener("change", () => {
+  modelInfo.textContent =
+    modelDescriptions[modelSelect.value] || modelDescriptions.llama;
+});
+
 userInput.addEventListener("input", function () {
-	this.style.height = "auto";
-	this.style.height = this.scrollHeight + "px";
+  this.style.height = "auto";
+  this.style.height = Math.min(this.scrollHeight, 180) + "px";
 });
 
-// Send message on Enter (without Shift)
-userInput.addEventListener("keydown", function (e) {
-	if (e.key === "Enter" && !e.shiftKey) {
-		e.preventDefault();
-		sendMessage();
-	}
+userInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendMessage();
+  }
 });
 
-// Send button click handler
 sendButton.addEventListener("click", sendMessage);
 
-/**
- * Sends a message to the chat API and processes the response
- */
+function addMessage(role, content) {
+  const message = document.createElement("div");
+  message.className = `message ${role}-message`;
+
+  const label = document.createElement("div");
+  label.className = "message-label";
+  label.textContent = role === "user" ? "Você" : "Fael AI";
+
+  const paragraph = document.createElement("p");
+  paragraph.textContent = content;
+
+  message.append(label, paragraph);
+  chatMessages.appendChild(message);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  return paragraph;
+}
+
+function extractText(json) {
+  if (typeof json.response === "string") {
+    return json.response;
+  }
+
+  const content = json.choices?.[0]?.delta?.content;
+
+  if (typeof content === "string") {
+    return content;
+  }
+
+  return "";
+}
+
 async function sendMessage() {
-	const message = userInput.value.trim();
+  const message = userInput.value.trim();
 
-	// Don't send empty messages
-	if (message === "" || isProcessing) return;
+  if (!message || isProcessing) return;
 
-	// Disable input while processing
-	isProcessing = true;
-	userInput.disabled = true;
-	sendButton.disabled = true;
+  const selectedModel = modelSelect.value;
 
-	// Add user message to chat
-	addMessageToChat("user", message);
+  isProcessing = true;
+  userInput.disabled = true;
+  sendButton.disabled = true;
+  modelSelect.disabled = true;
 
-	// Clear input
-	userInput.value = "";
-	userInput.style.height = "auto";
+  addMessage("user", message);
+  userInput.value = "";
+  userInput.style.height = "auto";
 
-	// Show typing indicator
-	typingIndicator.classList.add("visible");
+  chatHistory.push({ role: "user", content: message });
 
-	// Add message to history
-	chatHistory.push({ role: "user", content: message });
+  typingIndicator.textContent =
+    `Aguardando resposta de ${modelSelect.options[modelSelect.selectedIndex].text}...`;
+  typingIndicator.classList.add("visible");
 
-	try {
-		// Create new assistant response element
-		const assistantMessageEl = document.createElement("div");
-		assistantMessageEl.className = "message assistant-message";
-		assistantMessageEl.innerHTML = "<p></p>";
-		chatMessages.appendChild(assistantMessageEl);
-		const assistantTextEl = assistantMessageEl.querySelector("p");
+  let assistantTextEl = null;
 
-		// Scroll to bottom
-		chatMessages.scrollTop = chatMessages.scrollHeight;
+  try {
+    assistantTextEl = addMessage("assistant", "");
 
-		// Send request to API
-		const response = await fetch("/api/chat", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				messages: chatHistory,
-			}),
-		});
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: chatHistory,
+        model: selectedModel
+      })
+    });
 
-		// Handle errors
-		if (!response.ok) {
-			throw new Error("Failed to get response");
-		}
-		if (!response.body) {
-			throw new Error("Response body is null");
-		}
+    if (!response.ok) {
+      let detail = "";
 
-		// Process streaming response
-		const reader = response.body.getReader();
-		const decoder = new TextDecoder();
-		let responseText = "";
-		let buffer = "";
-		const flushAssistantText = () => {
-			assistantTextEl.textContent = responseText;
-			chatMessages.scrollTop = chatMessages.scrollHeight;
-		};
+      try {
+        const errorData = await response.json();
+        detail = errorData.error || "";
+      } catch {
+        // A resposta de erro pode não ser JSON.
+      }
 
-		let sawDone = false;
-		while (true) {
-			const { done, value } = await reader.read();
+      throw new Error(detail || `Erro HTTP ${response.status}`);
+    }
 
-			if (done) {
-				// Process any remaining complete events in buffer
-				const parsed = consumeSseEvents(buffer + "\n\n");
-				for (const data of parsed.events) {
-					if (data === "[DONE]") {
-						break;
-					}
-					try {
-						const jsonData = JSON.parse(data);
-						// Handle both Workers AI format (response) and OpenAI format (choices[0].delta.content)
-						let content = "";
-						if (
-							typeof jsonData.response === "string" &&
-							jsonData.response.length > 0
-						) {
-							content = jsonData.response;
-						} else if (jsonData.choices?.[0]?.delta?.content) {
-							content = jsonData.choices[0].delta.content;
-						}
-						if (content) {
-							responseText += content;
-							flushAssistantText();
-						}
-					} catch (e) {
-						console.error("Error parsing SSE data as JSON:", e, data);
-					}
-				}
-				break;
-			}
+    if (!response.body) {
+      throw new Error("O servidor não retornou um fluxo de resposta.");
+    }
 
-			// Decode chunk
-			buffer += decoder.decode(value, { stream: true });
-			const parsed = consumeSseEvents(buffer);
-			buffer = parsed.buffer;
-			for (const data of parsed.events) {
-				if (data === "[DONE]") {
-					sawDone = true;
-					buffer = "";
-					break;
-				}
-				try {
-					const jsonData = JSON.parse(data);
-					// Handle both Workers AI format (response) and OpenAI format (choices[0].delta.content)
-					let content = "";
-					if (
-						typeof jsonData.response === "string" &&
-						jsonData.response.length > 0
-					) {
-						content = jsonData.response;
-					} else if (jsonData.choices?.[0]?.delta?.content) {
-						content = jsonData.choices[0].delta.content;
-					}
-					if (content) {
-						responseText += content;
-						flushAssistantText();
-					}
-				} catch (e) {
-					console.error("Error parsing SSE data as JSON:", e, data);
-				}
-			}
-			if (sawDone) {
-				break;
-			}
-		}
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
 
-		// Add completed response to chat history
-		if (responseText.length > 0) {
-			chatHistory.push({ role: "assistant", content: responseText });
-		}
-	} catch (error) {
-		console.error("Error:", error);
-		addMessageToChat(
-			"assistant",
-			"Sorry, there was an error processing your request.",
-		);
-	} finally {
-		// Hide typing indicator
-		typingIndicator.classList.remove("visible");
+    let buffer = "";
+    let responseText = "";
+    let finished = false;
 
-		// Re-enable input
-		isProcessing = false;
-		userInput.disabled = false;
-		sendButton.disabled = false;
-		userInput.focus();
-	}
-}
+    function processEvent(rawEvent) {
+      const data = rawEvent
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n");
 
-/**
- * Helper function to add message to chat
- */
-function addMessageToChat(role, content) {
-	const messageEl = document.createElement("div");
-	messageEl.className = `message ${role}-message`;
-	messageEl.innerHTML = `<p>${content}</p>`;
-	chatMessages.appendChild(messageEl);
+      if (!data) return;
 
-	// Scroll to bottom
-	chatMessages.scrollTop = chatMessages.scrollHeight;
-}
+      if (data === "[DONE]") {
+        finished = true;
+        return;
+      }
 
-function consumeSseEvents(buffer) {
-	let normalized = buffer.replace(/\r/g, "");
-	const events = [];
-	let eventEndIndex;
-	while ((eventEndIndex = normalized.indexOf("\n\n")) !== -1) {
-		const rawEvent = normalized.slice(0, eventEndIndex);
-		normalized = normalized.slice(eventEndIndex + 2);
+      try {
+        const json = JSON.parse(data);
 
-		const lines = rawEvent.split("\n");
-		const dataLines = [];
-		for (const line of lines) {
-			if (line.startsWith("data:")) {
-				dataLines.push(line.slice("data:".length).trimStart());
-			}
-		}
-		if (dataLines.length === 0) continue;
-		events.push(dataLines.join("\n"));
-	}
-	return { events, buffer: normalized };
+        if (json.error) {
+          throw new Error(json.error);
+        }
+
+        const text = extractText(json);
+
+        if (text) {
+          responseText += text;
+          assistantTextEl.textContent = responseText;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message !== "Unexpected end of JSON input" &&
+          !error.message.includes("JSON")
+        ) {
+          throw error;
+        }
+
+        console.warn("Evento SSE ignorado:", data);
+      }
+    }
+
+    while (!finished) {
+      const { value, done } = await reader.read();
+
+      buffer += decoder.decode(value || new Uint8Array(), {
+        stream: !done
+      });
+      buffer = buffer.replace(/\r/g, "");
+
+      let boundary;
+
+      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        processEvent(rawEvent);
+
+        if (finished) break;
+      }
+
+      if (done) {
+        if (buffer.trim() && !finished) {
+          processEvent(buffer);
+        }
+        break;
+      }
+    }
+
+    if (responseText) {
+      chatHistory.push({
+        role: "assistant",
+        content: responseText
+      });
+    } else {
+      assistantTextEl.textContent =
+        "Não recebi texto nesta resposta. Tente novamente ou escolha outro modelo.";
+    }
+  } catch (error) {
+    console.error("Erro no chat:", error);
+
+    const errorMessage =
+      error instanceof Error ? error.message : "Erro desconhecido.";
+
+    if (assistantTextEl) {
+      assistantTextEl.textContent =
+        `Não foi possível obter uma resposta: ${errorMessage}`;
+    } else {
+      addMessage("assistant", `Erro: ${errorMessage}`);
+    }
+
+    // Remove a mensagem do histórico se a solicitação falhou.
+    if (chatHistory.at(-1)?.role === "user") {
+      chatHistory.pop();
+    }
+  } finally {
+    typingIndicator.classList.remove("visible");
+    isProcessing = false;
+    userInput.disabled = false;
+    sendButton.disabled = false;
+    modelSelect.disabled = false;
+    userInput.focus();
+  }
 }
