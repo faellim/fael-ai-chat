@@ -1,102 +1,117 @@
+
 /**
- * LLM Chat Application Template
- *
- * A simple chat application using Cloudflare Workers AI.
- * This template demonstrates how to implement an LLM-powered chat interface with
- * streaming responses using Server-Sent Events (SSE).
- *
- * @license MIT
+ * Fael AI Chat
+ * Cloudflare Workers AI with server-validated model selection.
  */
 import { Env, ChatMessage } from "./types";
 
-// Model ID for Workers AI model
-// https://developers.cloudflare.com/workers-ai/models/
-const MODEL_ID = "@cf/meta/llama-3.1-8b-instruct-fp8";
+const MODELS = {
+  llama: "@cf/meta/llama-3.1-8b-instruct-fp8",
+  glm: "@cf/zai-org/glm-4.7-flash",
+  gemma: "@cf/google/gemma-4-26b-a4b-it",
+} as const;
 
-// Default system prompt
+type ModelKey = keyof typeof MODELS;
+
+const DEFAULT_MODEL: ModelKey = "llama";
+
 const SYSTEM_PROMPT =
-	"You are a helpful, friendly assistant. Provide concise and accurate responses.";
+  "You are Fael AI, a helpful and friendly assistant. " +
+  "Respond in Brazilian Portuguese by default, unless the user asks for another language. " +
+  "Be accurate, clear, and honest about uncertainty.";
 
 export default {
-	/**
-	 * Main request handler for the Worker
-	 */
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		const url = new URL(request.url);
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const url = new URL(request.url);
 
-		// Handle static assets (frontend)
-		if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
-			return env.ASSETS.fetch(request);
-		}
+    if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
+      return env.ASSETS.fetch(request);
+    }
 
-		// API Routes
-		if (url.pathname === "/api/chat") {
-			// Handle POST requests for chat
-			if (request.method === "POST") {
-				return handleChatRequest(request, env);
-			}
+    if (url.pathname === "/api/chat") {
+      if (request.method !== "POST") {
+        return new Response("Method not allowed", {
+          status: 405,
+          headers: { Allow: "POST" },
+        });
+      }
 
-			// Method not allowed for other request types
-			return new Response("Method not allowed", { status: 405 });
-		}
+      return handleChatRequest(request, env);
+    }
 
-		// Handle 404 for unmatched routes
-		return new Response("Not found", { status: 404 });
-	},
+    return new Response("Not found", { status: 404 });
+  },
 } satisfies ExportedHandler<Env>;
 
-/**
- * Handles chat API requests
- */
 async function handleChatRequest(
-	request: Request,
-	env: Env,
+  request: Request,
+  env: Env,
 ): Promise<Response> {
-	try {
-		// Parse JSON request body
-		const { messages = [] } = (await request.json()) as {
-			messages: ChatMessage[];
-		};
+  try {
+    const body = (await request.json()) as {
+      messages?: ChatMessage[];
+      model?: string;
+    };
 
-		// Add system prompt if not present
-		if (!messages.some((msg) => msg.role === "system")) {
-			messages.unshift({ role: "system", content: SYSTEM_PROMPT });
-		}
+    if (!Array.isArray(body.messages)) {
+      return Response.json(
+        { error: "A valid messages array is required." },
+        { status: 400 },
+      );
+    }
 
-		const inputs = {
-			messages,
-			max_tokens: 1024,
-			stream: true,
-		} satisfies AiTextGenerationInput & { stream: true };
+    // Only accept user and assistant messages from the client.
+    // The system prompt is controlled by the server.
+    const messages: ChatMessage[] = body.messages
+      .filter(
+        (message) =>
+          message &&
+          (message.role === "user" || message.role === "assistant") &&
+          typeof message.content === "string",
+      )
+      .slice(-40);
 
-		const stream = await env.AI.run<typeof MODEL_ID>(MODEL_ID, inputs, {
-			// Uncomment to use AI Gateway
-			// gateway: {
-			//   id: "YOUR_GATEWAY_ID", // Replace with your AI Gateway ID
-			//   skipCache: false,      // Set to true to bypass cache
-			//   cacheTtl: 3600,        // Cache time-to-live in seconds
-			// },
-		});
+    messages.unshift({
+      role: "system",
+      content: SYSTEM_PROMPT,
+    });
 
-		return new Response(stream, {
-			headers: {
-				"content-type": "text/event-stream; charset=utf-8",
-				"cache-control": "no-cache",
-				connection: "keep-alive",
-			},
-		});
-	} catch (error) {
-		console.error("Error processing chat request:", error);
-		return new Response(
-			JSON.stringify({ error: "Failed to process request" }),
-			{
-				status: 500,
-				headers: { "content-type": "application/json" },
-			},
-		);
-	}
+    // The client sends a short model key, never an arbitrary model ID.
+    const requestedModel = body.model;
+    const modelKey: ModelKey =
+      typeof requestedModel === "string" &&
+      Object.prototype.hasOwnProperty.call(MODELS, requestedModel)
+        ? (requestedModel as ModelKey)
+        : DEFAULT_MODEL;
+
+    const modelId = MODELS[modelKey];
+
+    const inputs = {
+      messages,
+      max_tokens: 1024,
+      stream: true,
+    } satisfies AiTextGenerationInput & { stream: true };
+
+    const stream = await env.AI.run<typeof modelId>(modelId, inputs);
+
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-content-type-options": "nosniff",
+      },
+    });
+  } catch (error) {
+    console.error("Error processing chat request:", error);
+
+    return Response.json(
+      { error: "Failed to process request. Check the model and free quota." },
+      { status: 500 },
+    );
+  }
 }
