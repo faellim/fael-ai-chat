@@ -1,183 +1,269 @@
+
 <!doctype html>
-<html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>LLM Chat App</title>
-		<style>
-			:root {
-				--primary-color: #f6821f;
-				--primary-hover: #e67e22;
-				--light-bg: #f9fafb;
-				--border-color: #e5e7eb;
-				--text-color: #1f2937;
-				--text-light: #6b7280;
-				--user-msg-bg: #fff2e6;
-				--assistant-msg-bg: #f3f4f6;
-			}
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>Fael AI</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #121a2b;
+      --panel2: #192338;
+      --border: #29364d;
+      --text: #edf2ff;
+      --muted: #9baac4;
+      --accent: #8b7cff;
+      --user: #35305f;
+    }
 
-			* {
-				box-sizing: border-box;
-				margin: 0;
-				padding: 0;
-			}
+    * { box-sizing: border-box; }
 
-			body {
-				font-family:
-					-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-					Cantarell, sans-serif;
-				line-height: 1.6;
-				color: var(--text-color);
-				max-width: 800px;
-				margin: 0 auto;
-				padding: 1rem;
-			}
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 16px 16px;
+    }
 
-			header {
-				text-align: center;
-				margin-bottom: 2rem;
-				padding: 1rem 0;
-				border-bottom: 1px solid var(--border-color);
-			}
+    header, main, footer {
+      width: 100%;
+      max-width: 900px;
+    }
 
-			h1 {
-				font-size: 1.5rem;
-				color: var(--primary-color);
-			}
+    header {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 4px 2px 24px;
+    }
 
-			.chat-container {
-				display: flex;
-				flex-direction: column;
-				height: calc(100vh - 200px);
-				min-height: 400px;
-				border: 1px solid var(--border-color);
-				border-radius: 8px;
-				overflow: hidden;
-			}
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 15px;
+      background: linear-gradient(135deg, #8b7cff, #5c8cff);
+      font-size: 25px;
+      font-weight: 800;
+    }
 
-			.chat-messages {
-				flex: 1;
-				overflow-y: auto;
-				padding: 1rem;
-				background-color: var(--light-bg);
-			}
+    h1 { font-size: 23px; margin: 0; letter-spacing: -.5px; }
+    header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
 
-			.message {
-				margin-bottom: 1rem;
-				padding: 0.75rem;
-				border-radius: 8px;
-				max-width: 80%;
-			}
+    .chat {
+      height: min(72vh, 760px);
+      min-height: 430px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 20px 70px #0003;
+    }
 
-			.message p {
-				white-space: pre-line;
-				margin: 0;
-				overflow-wrap: anywhere;
-			}
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
 
-			.user-message {
-				background-color: var(--user-msg-bg);
-				align-self: flex-end;
-				margin-left: auto;
-			}
+    .toolbar label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
 
-			.assistant-message {
-				background-color: var(--assistant-msg-bg);
-				align-self: flex-start;
-			}
+    select {
+      display: block;
+      margin-top: 5px;
+      width: min(100%, 340px);
+      padding: 10px 36px 10px 12px;
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font: inherit;
+    }
 
-			.message-input {
-				display: flex;
-				padding: 0.75rem;
-				border-top: 1px solid var(--border-color);
-				background-color: white;
-			}
+    .status {
+      font-size: 12px;
+      color: #a8e8c1;
+    }
 
-			#user-input {
-				flex: 1;
-				padding: 0.75rem;
-				border: 1px solid var(--border-color);
-				border-radius: 4px;
-				font-family: inherit;
-				resize: none;
-				min-height: 44px;
-			}
+    #model-info {
+      padding: 0 18px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
 
-			#send-button {
-				margin-left: 0.5rem;
-				padding: 0 1rem;
-				background-color: var(--primary-color);
-				color: white;
-				border: none;
-				border-radius: 4px;
-				cursor: pointer;
-				transition: background-color 0.2s;
-			}
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
 
-			#send-button:hover {
-				background-color: var(--primary-hover);
-			}
+    .message {
+      max-width: 85%;
+      padding: 13px 16px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      overflow-wrap: anywhere;
+    }
 
-			#send-button:disabled {
-				background-color: var(--text-light);
-				cursor: not-allowed;
-			}
+    .message p { margin: 0; white-space: pre-wrap; }
+    .assistant-message { align-self: flex-start; background: var(--panel2); }
+    .user-message {
+      align-self: flex-end;
+      background: var(--user);
+      border-color: #51478a;
+    }
 
-			.typing-indicator {
-				display: none;
-				font-style: italic;
-				color: var(--text-light);
-				padding: 1rem;
-			}
+    .message-label {
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+    }
 
-			.typing-indicator.visible {
-				display: block;
-			}
+    .composer {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      background: #0f1727;
+    }
 
-			footer {
-				margin-top: 1rem;
-				text-align: center;
-				font-size: 0.85rem;
-				color: var(--text-light);
-			}
-		</style>
-	</head>
-	<body>
-		<header>
-			<h1>Cloudflare AI Chat</h1>
-			<p>Powered by Cloudflare Workers AI</p>
-		</header>
+    #user-input {
+      flex: 1;
+      min-width: 0;
+      min-height: 48px;
+      max-height: 180px;
+      resize: vertical;
+      padding: 13px 14px;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font: inherit;
+    }
 
-		<div class="chat-container">
-			<div id="chat-messages" class="chat-messages">
-				<div class="message assistant-message">
-					<p>
-						Hello! I'm an LLM chat app powered by Cloudflare Workers AI. How can
-						I help you today?
-					</p>
-				</div>
-			</div>
+    #user-input:focus, select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
 
-			<div class="typing-indicator" id="typing-indicator">
-				AI is thinking...
-			</div>
+    button {
+      min-height: 48px;
+      padding: 0 19px;
+      border: 0;
+      border-radius: 12px;
+      color: white;
+      background: var(--accent);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
 
-			<div class="message-input">
-				<textarea
-					id="user-input"
-					placeholder="Type your message here..."
-					rows="1"
-					autofocus
-				></textarea>
-				<button id="send-button">Send</button>
-			</div>
-		</div>
+    button:hover { filter: brightness(1.1); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
 
-		<footer>
-			<p>Cloudflare Workers AI Chat Template &copy; 2025</p>
-		</footer>
+    #typing-indicator {
+      display: none;
+      color: var(--muted);
+      padding: 0 22px 12px;
+      font-size: 13px;
+    }
 
-		<!-- Chat app script -->
-		<script src="chat.js"></script>
-	</body>
+    #typing-indicator.visible { display: block; }
+
+    footer {
+      padding: 14px 0 4px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 560px) {
+      body { padding: 15px 10px; }
+      header { padding-bottom: 16px; }
+      .chat { height: 76vh; min-height: 400px; }
+      #chat-messages { padding: 14px; }
+      .message { max-width: 94%; }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+      select { width: 100%; }
+      .composer { padding: 10px; }
+      button { padding: 0 13px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo" aria-hidden="true">✦</div>
+    <div>
+      <h1>Fael AI</h1>
+      <p>Seu espaço de inteligência artificial</p>
+    </div>
+  </header>
+
+  <main class="chat">
+    <div class="toolbar">
+      <div>
+        <label for="model-select">Modelo de IA</label>
+        <select id="model-select">
+          <option value="llama">Llama 3.1 8B · Geral</option>
+          <option value="glm">GLM-4.7-Flash · Raciocínio e código</option>
+          <option value="gemma">Gemma 4 26B A4B · Tarefas complexas</option>
+        </select>
+      </div>
+      <span class="status">● Workers AI</span>
+    </div>
+
+    <div id="model-info">
+      Modelo de uso geral. Escolha outro modelo no menu acima.
+    </div>
+
+    <div id="chat-messages" aria-live="polite" aria-label="Conversa">
+      <div class="message assistant-message">
+        <div class="message-label">Fael AI</div>
+        <p>Olá! 👋 Sou o Fael AI. Escolha um modelo e me diga no que posso ajudar.</p>
+      </div>
+    </div>
+
+    <div id="typing-indicator" role="status">A IA está pensando...</div>
+
+    <div class="composer">
+      <textarea
+        id="user-input"
+        placeholder="Escreva sua mensagem..."
+        rows="1"
+        aria-label="Sua mensagem"
+      ></textarea>
+      <button id="send-button" type="button">Enviar ↑</button>
+    </div>
+  </main>
+
+  <footer>Fael AI · Hospedado na Cloudflare</footer>
+  <script src="chat.js"></script>
+</body>
 </html>
